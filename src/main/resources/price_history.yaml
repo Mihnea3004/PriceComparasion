@@ -1,0 +1,13 @@
+{
+  "mappings": {
+    "properties": {
+      "id": { "type": "keyword" },
+      "productId": { "type": "keyword" },
+      "date": {
+        "type": "date",
+        "format": "dd-MM-yyyy"
+      },
+      "price": { "type": "double" }
+    }
+  }
+}
