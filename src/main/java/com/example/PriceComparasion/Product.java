@@ -2,28 +2,35 @@ package com.example.PriceComparasion;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.elasticsearch.annotations.Document;
+import org.springframework.data.elasticsearch.annotations.Field;
+import org.springframework.data.elasticsearch.annotations.FieldType;
 
 @Document(indexName = "products")
 public class Product {
 
     @Id
     private String id;
-    private String name;
-    private String category;
-    private double price;
-    private String link;
-    private String manufacturer;
-    private boolean available;
 
-    public Product(String id, String name, String category, double price, String link, String manufacturer, boolean available) {
-        this.id = id;
-        this.name = name;
-        this.category = category;
-        this.price = price;
-        this.link = link;
-        this.manufacturer = manufacturer;
-        this.available = available;
-    }
+    @Field(type = FieldType.Text)
+    private String name;
+
+    @Field(type = FieldType.Keyword)
+    private String category;
+
+    @Field(type = FieldType.Double)
+    private double price;
+
+    @Field(type = FieldType.Keyword)
+    private String manufacturer;
+
+    @Field(type = FieldType.Boolean)
+    private boolean available;
+    
+    @Field(type = FieldType.Keyword)
+    private String link;
+
+    // Getters and Setters
+
     
     public String getId() {
     	return id;
