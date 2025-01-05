@@ -15,15 +15,14 @@ public class PriceHistoryController {
         this.priceHistoryRepository = priceHistoryRepository;
     }
 
-    /**
-     * Get the price history for a specific product.
-     *
-     * @param productId The ID of the product.
-     * @return A list of price history entries for the product.
-     */
     @GetMapping
     public ResponseEntity<List<PriceHistory>> getPriceHistory(@PathVariable String productId) {
-        List<PriceHistory> history = priceHistoryRepository.findByProductId(productId);
-        return ResponseEntity.ok(history);
+        List<PriceHistory> histories = priceHistoryRepository.findByProductId(productId);
+        if (histories.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(histories);
     }
 }
+
+

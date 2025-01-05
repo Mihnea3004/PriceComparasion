@@ -1,11 +1,11 @@
 package com.example.PriceComparasion;
 
 import org.springframework.data.elasticsearch.repository.ElasticsearchRepository;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+@Repository
 public interface PriceHistoryRepository extends ElasticsearchRepository<PriceHistory, String> {
-
-    // Custom query method to find price history by productId
     List<PriceHistory> findByProductId(String productId);
 }

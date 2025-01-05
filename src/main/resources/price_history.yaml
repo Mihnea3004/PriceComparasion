@@ -5,7 +5,7 @@
       "productId": { "type": "keyword" },
       "date": {
         "type": "date",
-        "format": "dd-MM-yyyy"
+        "format": "dd-MM-yyyy hh:mm"
       },
       "price": { "type": "double" }
     }

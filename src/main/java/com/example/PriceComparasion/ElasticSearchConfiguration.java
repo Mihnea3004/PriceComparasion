@@ -19,15 +19,13 @@ public class ElasticSearchConfiguration {
     public Boolean configurePriceHistoryIndex() {
         IndexOperations indexOps = elasticsearchOperations.indexOps(PriceHistory.class);
 
-        // Delete and recreate the index (use only in development/testing)
         if (indexOps.exists()) {
             indexOps.delete();
         }
         indexOps.create();
 
-        // Apply mapping from the PriceHistory model class
         indexOps.putMapping(indexOps.createMapping(PriceHistory.class));
 
-        return true; // Return a bean indicating success
+        return true; 
     }
 }

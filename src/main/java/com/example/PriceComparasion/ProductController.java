@@ -1,184 +1,162 @@
 package com.example.PriceComparasion;
 
-
-import org.springframework.data.elasticsearch.client.elc.NativeQuery;
-import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.SearchHits;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.http.util.EntityUtils;
+import org.elasticsearch.client.Request;
+import org.elasticsearch.client.Response;
+import org.elasticsearch.client.RestClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.time.LocalDate;
-import java.util.*;
-import java.util.stream.Collectors;
-
-import org.springframework.data.elasticsearch.client.elc.NativeQuery;
-import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.SearchHits;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDate;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/products")
 public class ProductController {
 
-    private final ProductSearchRepository productSearchRepository;
-    private final PriceHistoryRepository priceHistoryRepository;
-    private final ElasticsearchOperations elasticsearchOperations;
+    private static final Logger logger = LoggerFactory.getLogger(ProductController.class);
 
-    public ProductController(ProductSearchRepository productSearchRepository, 
-                             PriceHistoryRepository priceHistoryRepository,
-                             ElasticsearchOperations elasticsearchOperations) {
-        this.productSearchRepository = productSearchRepository;
+    private final RestClient restClient;
+    private final ObjectMapper objectMapper;
+    private final PriceHistoryRepository priceHistoryRepository;
+
+    private static final String INDEX_NAME = "products";
+
+    public ProductController(RestClient restClient, ObjectMapper objectMapper, PriceHistoryRepository priceHistoryRepository) {
+        this.restClient = restClient;
+        this.objectMapper = objectMapper;
         this.priceHistoryRepository = priceHistoryRepository;
-        this.elasticsearchOperations = elasticsearchOperations;
     }
 
-    /**
-     * Create a new product and its first price history entry.
-     *
-     * @param product The product to create.
-     * @return The created product.
-     */
     @PostMapping
     public ResponseEntity<Product> createProduct(@RequestBody Product product) {
-        Product savedProduct = productSearchRepository.save(product);
+        try {
+            Request request = new Request("POST", "/" + INDEX_NAME + "/_doc/" + product.getId());
+            request.setJsonEntity(objectMapper.writeValueAsString(product));
+            Response response = restClient.performRequest(request);
 
-        // Create initial price history entry
-        PriceHistory initialPriceHistory = new PriceHistory();
-        initialPriceHistory.setProductId(savedProduct.getId());
-        initialPriceHistory.setDate(LocalDate.now()); // Use LocalDate
-        initialPriceHistory.setPrice(savedProduct.getPrice());
-        priceHistoryRepository.save(initialPriceHistory);
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(savedProduct);
-    }
-
-    /**
-     * Get a list of all products with optional sorting.
-     *
-     * @param sortBy Sort criteria: "low_to_high", "high_to_low".
-     * @return A list of all products.
-     */
-    @GetMapping
-    public ResponseEntity<List<Product>> getAllProducts(@RequestParam(defaultValue = "relevance") String sortBy) {
-        Iterable<Product> products = productSearchRepository.findAll();
-        List<Product> productList = new ArrayList<>();
-        products.forEach(productList::add);
-
-        // Sorting
-        if ("low_to_high".equalsIgnoreCase(sortBy)) {
-            productList.sort(Comparator.comparing(Product::getPrice));
-        } else if ("high_to_low".equalsIgnoreCase(sortBy)) {
-            productList.sort(Comparator.comparing(Product::getPrice).reversed());
+            if (response.getStatusLine().getStatusCode() == HttpStatus.CREATED.value()) {
+                return ResponseEntity.status(HttpStatus.CREATED).body(product);
+            }
+        } catch (IOException e) {
+            logger.error("Error creating product", e);
         }
-
-        return ResponseEntity.ok(productList);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
     }
 
-    /**
-     * Get a product by ID.
-     *
-     * @param productId The ID of the product to retrieve.
-     * @return The product with the specified ID or 404 if not found.
-     */
     @GetMapping("/{productId}")
     public ResponseEntity<Product> getProductById(@PathVariable String productId) {
-        Optional<Product> product = productSearchRepository.findById(productId);
-        return product.map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
-    }
+        try {
+            Request request = new Request("GET", "/" + INDEX_NAME + "/_doc/" + productId);
+            Response response = restClient.performRequest(request);
 
-    /**
-     * Update an existing product and its price history.
-     *
-     * @param productId     The ID of the product to update.
-     * @param productDetails The updated product details.
-     * @return The updated product or 404 if the product does not exist.
-     */
-    @PutMapping("/{productId}")
-    public ResponseEntity<Product> updateProduct(@PathVariable String productId, @RequestBody Product productDetails) {
-        Optional<Product> productOptional = productSearchRepository.findById(productId);
-
-        if (productOptional.isPresent()) {
-            Product product = productOptional.get();
-
-            // Add price history if price changes
-            if (productDetails.getPrice() != product.getPrice()) {
-                PriceHistory priceHistory = new PriceHistory();
-                priceHistory.setProductId(productId);
-                priceHistory.setDate(LocalDate.now());
-                priceHistory.setPrice(productDetails.getPrice());
-                priceHistoryRepository.save(priceHistory);
+            if (response.getStatusLine().getStatusCode() == HttpStatus.OK.value()) {
+                String responseBody = EntityUtils.toString(response.getEntity());
+                Map<String, Object> source = objectMapper.readValue(responseBody, Map.class);
+                Product product = objectMapper.convertValue(source.get("_source"), Product.class);
+                return ResponseEntity.ok(product);
             }
-
-            // Update product details
-            product.setName(productDetails.getName());
-            product.setCategory(productDetails.getCategory());
-            product.setPrice(productDetails.getPrice());
-            product.setLink(productDetails.getLink());
-            product.setManufacturer(productDetails.getManufacturer());
-            product.setAvailability(productDetails.getAvailability());
-
-            Product updatedProduct = productSearchRepository.save(product);
-            return ResponseEntity.ok(updatedProduct);
+        } catch (IOException e) {
+            logger.error("Error fetching product", e);
         }
-
-        return ResponseEntity.notFound().build();
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 
-    /**
-     * Delete a product by ID.
-     *
-     * @param productId The ID of the product to delete.
-     * @return A response indicating the result of the operation.
-     */
+    @PutMapping("/{productId}")
+    public ResponseEntity<Product> updateProduct(@PathVariable String productId, @RequestBody Product product) {
+        try {
+            Request getRequest = new Request("GET", "/" + INDEX_NAME + "/_doc/" + productId);
+            Response getResponse = restClient.performRequest(getRequest);
+
+            if (getResponse.getStatusLine().getStatusCode() == HttpStatus.OK.value()) {
+                String existingProductJson = EntityUtils.toString(getResponse.getEntity());
+                Product existingProduct = objectMapper.readValue(existingProductJson, Product.class);
+
+                if (product.getPrice() != existingProduct.getPrice()) {
+                    savePriceHistory(productId, existingProduct.getPrice());
+                }
+
+                product.setPrice(product.getPrice());
+
+                Request updateRequest = new Request("PUT", "/" + INDEX_NAME + "/_doc/" + productId);
+                updateRequest.setJsonEntity(objectMapper.writeValueAsString(product));
+                restClient.performRequest(updateRequest);
+
+                return ResponseEntity.ok(product);
+            }
+        } catch (IOException e) {
+            logger.error("Error updating product", e);
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+    }
+
+    private void savePriceHistory(String productId, Double oldPrice) {
+        PriceHistory priceHistory = new PriceHistory();
+        priceHistory.setPrice(oldPrice);
+        priceHistory.setId(UUID.randomUUID().toString());
+        priceHistory.setProductId(productId);
+        priceHistory.setDate(LocalDate.now());
+        priceHistoryRepository.save(priceHistory);
+    }
+
     @DeleteMapping("/{productId}")
     public ResponseEntity<Void> deleteProduct(@PathVariable String productId) {
-        if (productSearchRepository.existsById(productId)) {
-            productSearchRepository.deleteById(productId);
-            priceHistoryRepository.deleteAll(priceHistoryRepository.findByProductId(productId));
-            return ResponseEntity.noContent().build();
+        try {
+            Request deleteRequest = new Request("DELETE", "/" + INDEX_NAME + "/_doc/" + productId);
+            Response deleteResponse = restClient.performRequest(deleteRequest);
+
+            if (deleteResponse.getStatusLine().getStatusCode() == HttpStatus.OK.value()) {
+                return ResponseEntity.noContent().build();
+            }
+        } catch (IOException e) {
+            logger.error("Error deleting product", e);
         }
-        return ResponseEntity.notFound().build();
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 
-    /**
-     * Search for products by name using Elasticsearch.
-     *
-     * @param query The search query.
-     * @param sortBy The sorting criteria: "low_to_high", "high_to_low".
-     * @return A list of products matching the search criteria.
-     */
     @GetMapping("/search")
-    public ResponseEntity<List<Product>> searchProducts(
-            @RequestParam String query,
-            @RequestParam(defaultValue = "relevance") String sortBy) {
+    public ResponseEntity<List<Product>> searchProducts(@RequestParam(defaultValue = "low_to_high") String sortBy) {
+        try {
+            String sortClause = "";
+            if ("low_to_high".equalsIgnoreCase(sortBy)) {
+                sortClause = "\"sort\": [{\"price\": \"asc\"}]";
+            } else if ("high_to_low".equalsIgnoreCase(sortBy)) {
+                sortClause = "\"sort\": [{\"price\": \"desc\"}]";
+            }
 
-        // Build the search query
-        NativeQuery searchQuery = NativeQuery.builder()
-                .withQuery(q -> q.match(t -> t.field("name").query(query)))
-                .build();
+            String searchJson = """
+                {
+                  %s
+                }
+                """.formatted(sortClause);
 
-        // Execute the search
-        SearchHits<Product> searchHits = elasticsearchOperations.search(searchQuery, Product.class);
+            Request request = new Request("POST", "/" + INDEX_NAME + "/_search");
+            request.setJsonEntity(searchJson);
 
-        // Extract search results
-        List<Product> products = searchHits.getSearchHits().stream()
-                .map(hit -> hit.getContent())
-                .collect(Collectors.toList());
+            Response response = restClient.performRequest(request);
+            String responseBody = EntityUtils.toString(response.getEntity());
+            Map<String, Object> responseMap = objectMapper.readValue(responseBody, Map.class);
 
-        // Sort results if requested
-        if ("low_to_high".equalsIgnoreCase(sortBy)) {
-            products.sort(Comparator.comparing(Product::getPrice));
-        } else if ("high_to_low".equalsIgnoreCase(sortBy)) {
-            products.sort(Comparator.comparing(Product::getPrice).reversed());
+            List<Map<String, Object>> hits = (List<Map<String, Object>>) ((Map<String, Object>) responseMap.get("hits")).get("hits");
+            List<Product> products = new ArrayList<>();
+            for (Map<String, Object> hit : hits) {
+                Product product = objectMapper.convertValue(hit.get("_source"), Product.class);
+                products.add(product);
+            }
+
+            return ResponseEntity.ok(products);
+        } catch (IOException e) {
+            logger.error("Error searching products", e);
         }
-
-        return ResponseEntity.ok(products);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
     }
 }
