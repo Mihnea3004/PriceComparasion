@@ -21,7 +21,6 @@ public class PriceHistory {
     @Field(type = FieldType.Double)
     private Double price;
 
-    // Getters and Setters
     public String getId() {
         return id;
     }

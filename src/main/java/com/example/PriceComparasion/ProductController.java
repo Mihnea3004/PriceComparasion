@@ -45,6 +45,7 @@ public class ProductController {
             Response response = restClient.performRequest(request);
 
             if (response.getStatusLine().getStatusCode() == HttpStatus.CREATED.value()) {
+            	savePriceHistory(product.getId(),product.getPrice());
                 return ResponseEntity.status(HttpStatus.CREATED).body(product);
             }
         } catch (IOException e) {
@@ -70,7 +71,14 @@ public class ProductController {
         }
         return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
-
+    private void savePriceHistory(String productId, Double oldPrice) {
+        PriceHistory priceHistory = new PriceHistory();
+        priceHistory.setPrice(oldPrice);
+        priceHistory.setId(UUID.randomUUID().toString());
+        priceHistory.setProductId(productId);
+        priceHistory.setDate(LocalDate.now());
+        priceHistoryRepository.save(priceHistory);
+    }
     @PutMapping("/{productId}")
     public ResponseEntity<Product> updateProduct(@PathVariable String productId, @RequestBody Product product) {
         try {
@@ -81,9 +89,8 @@ public class ProductController {
                 String existingProductJson = EntityUtils.toString(getResponse.getEntity());
                 Product existingProduct = objectMapper.readValue(existingProductJson, Product.class);
 
-                if (product.getPrice() != existingProduct.getPrice()) {
-                    savePriceHistory(productId, existingProduct.getPrice());
-                }
+                savePriceHistory(productId, product.getPrice());
+                
 
                 product.setPrice(product.getPrice());
 
@@ -99,14 +106,7 @@ public class ProductController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 
-    private void savePriceHistory(String productId, Double oldPrice) {
-        PriceHistory priceHistory = new PriceHistory();
-        priceHistory.setPrice(oldPrice);
-        priceHistory.setId(UUID.randomUUID().toString());
-        priceHistory.setProductId(productId);
-        priceHistory.setDate(LocalDate.now());
-        priceHistoryRepository.save(priceHistory);
-    }
+
 
     @DeleteMapping("/{productId}")
     public ResponseEntity<Void> deleteProduct(@PathVariable String productId) {
@@ -123,7 +123,7 @@ public class ProductController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 
-    @GetMapping("/search")
+    @GetMapping
     public ResponseEntity<List<Product>> searchProducts(@RequestParam(defaultValue = "low_to_high") String sortBy) {
         try {
             String sortClause = "";
